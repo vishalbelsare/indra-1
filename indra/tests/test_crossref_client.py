@@ -1,8 +1,6 @@
-from __future__ import absolute_import, print_function, unicode_literals
-from builtins import dict, str
 from indra.literature import crossref_client
 from indra.util import unicode_strs
-from nose.plugins.attrib import attr
+import pytest
 
 test_doi = '10.1016/j.ccell.2016.02.010'
 
@@ -11,14 +9,14 @@ example_ids = {'pmid': '25361007',
                'doi': '10.18632/oncotarget.2555'}
 
 
-@attr('webservice')
+@pytest.mark.webservice
 def test_doi_query():
     mapped_doi = crossref_client.doi_query(example_ids['pmid'])
     assert mapped_doi == example_ids['doi']
     assert unicode_strs(mapped_doi)
 
 
-@attr('webservice')
+@pytest.mark.webservice
 def test_get_metadata():
     metadata = crossref_client.get_metadata(test_doi)
     assert metadata['DOI'] == test_doi
@@ -27,7 +25,7 @@ def test_get_metadata():
     assert metadata is None
 
 
-@attr('webservice')
+@pytest.mark.webservice
 def test_get_publisher():
     publisher = crossref_client.get_publisher(test_doi)
     assert publisher == 'Elsevier BV'
@@ -36,7 +34,7 @@ def test_get_publisher():
     assert publisher is None
 
 
-@attr('webservice')
+@pytest.mark.webservice
 def test_get_fulltext_links():
     links = crossref_client.get_fulltext_links(test_doi)
     content_types = [l.get('content-type') for l in links]
@@ -47,7 +45,7 @@ def test_get_fulltext_links():
     assert links is None
 
 
-@attr('webservice')
+@pytest.mark.webservice
 def test_get_license_links():
     links = crossref_client.get_license_links(test_doi)
     assert links[0] == 'https://www.elsevier.com/tdm/userlicense/1.0/'
@@ -56,10 +54,10 @@ def test_get_license_links():
     assert links is None
 
 
-@attr('webservice')
+@pytest.mark.webservice
 def test_get_url():
     url = crossref_client.get_url(test_doi)
-    assert url == 'http://dx.doi.org/10.1016/j.ccell.2016.02.010'
+    assert url == 'https://doi.org/10.1016/j.ccell.2016.02.010'
     assert unicode_strs(url)
     url = crossref_client.get_url('xyz')
     assert url is None

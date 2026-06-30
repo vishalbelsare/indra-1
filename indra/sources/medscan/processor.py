@@ -8,6 +8,8 @@ import shutil
 import tempfile
 import logging
 from math import floor
+
+import gilda
 import lxml.etree
 import collections
 
@@ -221,7 +223,7 @@ D_INHIBITION_VERBS = ['DirectRegulation-negative',
 # All inhibition verbs
 ALL_INHIBITION_VERBS = INHIBITION_VERBS + D_INHIBITION_VERBS
 
-PMID_PATT = re.compile('info:pmid/(\d+)')
+PMID_PATT = re.compile(r'info:pmid/(\d+)')
 
 
 class MedscanProcessor(object):
@@ -1034,12 +1036,21 @@ def _urn_to_db_refs(urn):
         else:
             # Identifier is MESH
             urn_mesh_name = unquote(urn_id)
-            mesh_id, mesh_name = mesh_client.get_mesh_id_name(urn_mesh_name)
+            mesh_id, mesh_name = mesh_client.get_mesh_id_name(urn_mesh_name,
+                                                              offline=True)
             if mesh_id:
                 db_refs['MESH'] = mesh_id
                 db_name = mesh_name
             else:
-                db_name = urn_mesh_name
+                matches = gilda.ground(urn_mesh_name, namespaces=['MESH'])
+                if matches:
+                    for match_ns, match_id in matches[0].get_groundings():
+                        if match_ns == 'MESH':
+                            db_refs['MESH'] = match_id
+                            db_name = matches[0].term.entry_name
+                            break
+                else:
+                    db_name = urn_mesh_name
     elif urn_type == 'agi-gocomplex':
         # Identifier is GO
         db_refs['GO'] = 'GO:%s' % urn_id

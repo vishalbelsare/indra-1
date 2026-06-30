@@ -5,7 +5,7 @@ Installing Python
 -----------------
 INDRA is a Python package so the basic requirement for using it is to have
 Python installed. Python is shipped with most Linux distributions and with
-OSX. INDRA works with Python 3.6 or higher.
+OSX. INDRA works with Python 3.8 or higher.
 
 On Mac, the preferred way to install Python (over the built-in version) is
 using `Homebrew <http://brew.sh/>`_.
@@ -32,14 +32,14 @@ To install directly from Github, do:
 
 .. code-block:: bash
 
-    pip install git+https://github.com/sorgerlab/indra.git
+    pip install git+https://github.com/gyorilab/indra.git
 
 Or first clone the repository to a local folder and use pip to install
 INDRA from there locally:
 
 .. code-block:: bash
 
-    git clone https://github.com/sorgerlab/indra.git
+    git clone https://github.com/gyorilab/indra.git
     cd indra
     pip install .
 
@@ -50,12 +50,12 @@ as a system-wide package.
 
 .. code-block:: bash
 
-    git clone https://github.com/sorgerlab/indra.git
+    git clone https://github.com/gyorilab/indra.git
 
 To be able to use INDRA this way, you need
 to make sure that all its requirements are installed. To be able to
 `import indra`, you also need the folder to be visible on your
-`PYTHONPATH <https://docs.python.org/2/using/cmdline.html#envvar-PYTHONPATH>`_
+`PYTHONPATH <https://docs.python.org/3/using/cmdline.html#envvar-PYTHONPATH>`_
 environmental variable.
 
 Installing releases with pip
@@ -109,14 +109,13 @@ configuration steps needed that are not described here.
 
     export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-11.0.2.jdk/Contents/Home
 
-3. Then first install cython followed by pyjnius (tested with version 1.1.4).
-   These need to be broken up into two sequential calls to pip
-   install.
+3. Install pyjnius (version 1.6.1 or higher). Recent versions install from
+   prebuilt wheels or build cleanly under current Cython, so the separate
+   Cython install previously required is no longer needed.
 
 .. code-block:: bash
 
-    pip install cython
-    pip install pyjnius==1.1.4
+    pip install "pyjnius>=1.6.1"
 
 On Mac, you may need to 
 `install Legacy Java for OSX <http://support.apple.com/kb/DL1572>`_.
@@ -157,10 +156,13 @@ one has to
 .. code-block:: bash
 
     brew install graphviz
-    pip install pygraphviz --install-option="--include-path=/usr/local/include/graphviz/" --install-option="--library-path=/usr/local/lib/graphviz"
+    pip install --config-settings="--global-option=build_ext" \
+                --config-settings="--global-option=-I$(brew --prefix graphviz)/include/" \
+                --config-settings="--global-option=-L$(brew --prefix graphviz)/lib/" \
+                pygraphviz
 
-where the --include-path and --library-path needs to be set based on
-where Homebrew installed graphviz.
+where ``brew --prefix graphviz`` resolves the graphviz install location on both
+Intel and Apple Silicon Macs.
 
 Optional additional dependencies
 ````````````````````````````````
@@ -175,12 +177,6 @@ installed as
     pip install indra[extra_list]
 
 You can also install all extra dependencies by doing
-
-.. code-block:: bash
-
-   pip install indra --install-option="complete"
-
-or 
 
 .. code-block:: bash
 
@@ -199,34 +195,45 @@ of dependencies.
 +-----------------+------------------------------------------------------+
 |Extra list name  |Purpose                                               |
 +=================+======================================================+
+| bel             | BEL input processing and output assembly             |
 +-----------------+------------------------------------------------------+
-|bel              |BEL input processing and output assembly              |
+| trips_offline   | Offline reading with local instance of TRIPS system  |
 +-----------------+------------------------------------------------------+
-|trips_offline    |Offline reading with local instance of TRIPS system   |
+| reach_offline   | Offline reading with local instance of REACH system  |
 +-----------------+------------------------------------------------------+
-|reach_offline    |Offline reading with local instance of REACH system   |
+| eidos_offline   | Offline reading with local instance of Eidos system  |
 +-----------------+------------------------------------------------------+
-|eidos_offline    |Offline reading with local instance of Eidos system   |
+| tkg             | Reading with textToKnowledgeGraph                    |
 +-----------------+------------------------------------------------------+
-|geneways         |Genewayas reader input processing                     |
+| geneways        | Geneways reader input processing                     |
 +-----------------+------------------------------------------------------+
-|sofia            |SOFIA reader input processing                         |
+| hypothesis      | Processing hypothes.is annotations                   |
 +-----------------+------------------------------------------------------+
-|bbn              |BBN reader input processing                           |
+| isi             | ISI reader input processing                          |
 +-----------------+------------------------------------------------------+
-|sbml             |SBML model export through the PySB Assembler          |
+| sbml            | SBML model export through the PySB Assembler         |
 +-----------------+------------------------------------------------------+
-|grounding        |Packages for re-grounding and disambiguating entities |
+| grounding       | Packages for re-grounding and disambiguating entities|
 +-----------------+------------------------------------------------------+
-|machine          |Running a local instance of a "RAS machine"           |
+| sklearn_belief  | Belief scoring with scikit-learn models              |
 +-----------------+------------------------------------------------------+
-|explanation      |Finding explanatory paths in rule-based models        |
+| machine         | Running a local instance of a "RAS machine"          |
 +-----------------+------------------------------------------------------+
-|aws              |Accessing AWS compute and storage resources           |
+| explanation     | Finding explanatory paths in rule-based models       |
 +-----------------+------------------------------------------------------+
-|graph            |Assembling into a visualizing Graphviz graphs         |
+| owl             | Processing OWL ontologies                            |
 +-----------------+------------------------------------------------------+
-|plot             |Create and display plots                              |
+| api             | Running the INDRA REST API service                   |
++-----------------+------------------------------------------------------+
+| aws             | Accessing AWS compute and storage resources          |
++-----------------+------------------------------------------------------+
+| graph           | Assembling and visualizing Graphviz graphs           |
++-----------------+------------------------------------------------------+
+| plot            | Creating and displaying plots                        |
++-----------------+------------------------------------------------------+
+| tests           | Running the INDRA test suite                         |
++-----------------+------------------------------------------------------+
+| all             | All of the optional dependencies listed above        |
 +-----------------+------------------------------------------------------+
 
 Configuring INDRA

@@ -1,10 +1,10 @@
 import os
-from nose.plugins.attrib import attr
+import pytest
 from indra.sources import reach
-from indra.sources.reach.processor import ReachProcessor
+from indra.sources.reach.processor import ReachProcessor, normalize_section
 from indra.util import unicode_strs
 from indra.statements import IncreaseAmount, DecreaseAmount, \
-    Dephosphorylation, Complex, Phosphorylation, Translocation
+    Dephosphorylation, Complex, Phosphorylation, Translocation, Agent
 
 # Change this list to control what modes of
 # reading are enabled in tests
@@ -298,7 +298,7 @@ def test_process_unicode():
         assert unicode_strs(rp.statements)
 
 
-@attr('slow')
+@pytest.mark.slow
 def test_process_pmc():
     for offline in offline_modes:
         rp = reach.process_pmc('PMC4338247', offline=offline)
@@ -482,6 +482,14 @@ def test_phosphorylation_regulation():
     assert not stmt.sub.mods
 
 
+def test_process_agents():
+    here = os.path.dirname(os.path.abspath(__file__))
+    test_file = os.path.join(here, 'reach_reg_phos.json')
+    agents = reach.process_agents_from_entities(test_file)
+    assert all(isinstance(a, Agent) for a in agents)
+    assert len(agents) == 2
+
+
 def test_organism_prioritization():
     here = os.path.dirname(os.path.abspath(__file__))
     test_file = os.path.join(here, 'reach_reg_phos.json')
@@ -530,3 +538,12 @@ def test_organism_prioritization_uppro():
     process(['1513314'], 'PRO_0000006688')
     process(['1513314', '9606'], 'PRO_0000006688')
     process(['1513314', '161274'], 'PRO_0000003427')
+
+
+def test_normalize_section():
+    assert normalize_section('results') == 'results'
+    assert normalize_section('3. results') == 'results'
+    assert normalize_section('3 results') == 'results'
+    assert normalize_section('results.') == 'results'
+    assert normalize_section('star*methods') == 'methods'
+    assert normalize_section('some random section') is None

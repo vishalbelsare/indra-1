@@ -1,5 +1,3 @@
-from __future__ import absolute_import, print_function, unicode_literals
-from builtins import dict, str
 import uuid
 import logging
 from typing import Mapping
@@ -77,7 +75,7 @@ class PybelAssembler(object):
     >>> stmt = Phosphorylation(map2k1, mapk1, 'T', '185')
     >>> pba = PybelAssembler([stmt])
     >>> belgraph = pba.make_model()
-    >>> sorted(node.as_bel() for node in belgraph) # doctest:+IGNORE_UNICODE
+    >>> sorted(node.as_bel() for node in belgraph)
     ['p(HGNC:6840 ! MAP2K1)', 'p(HGNC:6871 ! MAPK1)', 'p(HGNC:6871 ! MAPK1, pmod(go:0006468 ! "protein phosphorylation", Thr, 185))']
     >>> len(belgraph)
     3
@@ -125,7 +123,7 @@ class PybelAssembler(object):
                     'namespace/mesh-processes/mesh-processes-20170725.belns'
         }
         self.model.namespace_url.update(ns_dict)
-        self.model.namespace_pattern['PUBCHEM'] = '\d+'
+        self.model.namespace_pattern['PUBCHEM'] = r'\d+'
         self.annotations_to_include = annotations_to_include
 
     def add_statements(self, stmts_to_add):

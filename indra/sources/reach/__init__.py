@@ -9,13 +9,24 @@ different ways in which INDRA can use REACH.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Setup and usage: Follow standard instructions to install
-`SBT <www.scala-sbt.org>`_. Then clone REACH and run the REACH web server.
+`SBT <https://www.scala-sbt.org>`_. Then clone REACH and run the REACH web server.
 
 .. code-block:: bash
 
     git clone https://github.com/clulab/reach.git
     cd reach
-    sbt 'runMain org.clulab.reach.export.server.ApiServer'
+    sbt "runMain org.clulab.reach.export.server.ApiServer"
+
+Alternately, REACH can be run via docker with the following.
+
+.. code-block:: bash
+
+    git clone https://github.com/clulab/reach.git
+    cd reach/docker
+    docker build --tag reach:latest .
+    docker run -d -it -p 8080:8080 reach:latest
+
+Where ``-d`` stands for 'detach' and runs the service in the background.
 
 Then read text by specifying the url parameter when using
 `indra.sources.reach.process_text`.
@@ -169,5 +180,7 @@ from .api import (process_pmc,
                   process_nxml_file,
                   process_json_str,
                   process_json_file,
+                  process_agents_from_entities,
+                  process_fries_json_group,
                   reach_text_url, reach_nxml_url,
                   local_text_url, local_nxml_url)

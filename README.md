@@ -1,17 +1,17 @@
 # INDRA
 
 [![License](https://img.shields.io/badge/License-BSD%202--Clause-orange.svg)](https://opensource.org/licenses/BSD-2-Clause)
-[![Build](https://github.com/sorgerlab/indra/workflows/Tests/badge.svg)](https://github.com/sorgerlab/indra/actions)
+[![Build](https://github.com/gyorilab/indra/workflows/Tests/badge.svg)](https://github.com/gyorilab/indra/actions)
 [![Documentation](https://readthedocs.org/projects/indra/badge/?version=latest)](https://indra.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/indra.svg)](https://badge.fury.io/py/indra)
 [![Python 3](https://img.shields.io/pypi/pyversions/indra.svg)](https://www.python.org/downloads/release/python-357/)
 
-<img align="left" src="https://raw.githubusercontent.com/sorgerlab/indra/master/doc/indra_logo.png" width="300" height="224" />
+<img align="left" src="https://raw.githubusercontent.com/gyorilab/indra/master/doc/indra_logo.png" width="300" height="224" />
 
 INDRA (Integrated Network and Dynamical Reasoning Assembler) is an automated
 model assembly system, originally developed for molecular systems biology and
 then generalized to other domains (see [INDRA
-World](https://github.com/indralab/indra_world)). INDRA draws on natural
+World](https://github.com/gyorilab/indra_world)). INDRA draws on natural
 language processing systems and structured databases to collect mechanistic and
 causal assertions, represents them in a standardized form (INDRA Statements),
 and assembles them into various modeling formalisms including causal graphs and
@@ -63,6 +63,7 @@ Reading systems:
 | Geneways   | [`indra.sources.geneways`](https://indra.readthedocs.io/en/latest/modules/sources/geneways/index.html) | https://www.ncbi.nlm.nih.gov/pubmed/15016385    |
 | GNBR       | [`indra.sources.gnbr`](https://indra.readthedocs.io/en/latest/modules/sources/gnbr/index.html)         | https://zenodo.org/record/3459420               |
 | SemRep     | [`indra.sources.semrep`](https://indra.readthedocs.io/en/latest/modules/sources/semrep.html)     | https://github.com/lhncbc/SemRep                |
+| textToKnowledgeGraph     | [`indra.sources.tkg`](https://indra.readthedocs.io/en/latest/modules/sources/tkg.html)     | https://github.com/ndexbio/llm-text-to-knowledge-graph |
 
 
 Biological pathway databases:
@@ -86,6 +87,7 @@ Biological pathway databases:
 | CREEDS                     | [`indra.sources.creeds`](https://indra.readthedocs.io/en/latest/modules/sources/creeds/index.html) | https://maayanlab.cloud/CREEDS/                                 |
 | UbiBrowser                 | [`indra.sources.ubibrowser`](https://indra.readthedocs.io/en/latest/modules/sources/ubibrowser.html) | http://ubibrowser.ncpsb.org.cn/                |
 | ACSN                       | [`indra.sources.acsn`](https://indra.readthedocs.io/en/latest/modules/sources/acsn.html) | https://acsn.curie.fr/ACSN2/ACSN2.html   |
+| WormBase                       | [`indra.sources.wormbase`](https://indra.readthedocs.io/en/latest/modules/sources/wormbase.html) | https://www.wormbase.org   |
 
 Custom knowledge bases:
 
@@ -212,7 +214,7 @@ the `indra_world` package to be installed.
 
 ```python
 from indra.tools import assemble_corpus as ac
-from indra_world.belief.wm_scorer import get_eidos_scorer
+from indra_world.belief import get_eidos_scorer
 from indra_world.ontology.world import world_ontology
 stmts = <the collection of all raw statements to use>
 stmts = ac.filter_grounded_only(stmts)  # Filter out ungrounded agents
@@ -246,19 +248,24 @@ Gyori B.M., Bachman J.A., Subramanian K., Muhlich J.L., Galescu L., Sorger P.K.
 assembly](http://msb.embopress.org/content/13/11/954) (2017),
 Molecular Systems Biology, 13, 954.
 
+Bachman J.A., Gyori B.M., Sorger P.K.
+[Automated assembly of molecular mechanisms at scale from text mining and
+curated databases](https://doi.org/10.15252/msb.202211325) (2023),
+Molecular Systems Biology, e11325.
+
 ## Installation
 
 For detailed installation instructions,
 [see the documentation](http://indra.readthedocs.io/en/latest/installation.html).
 
-INDRA currently supports Python 3.6+. The last release of INDRA compatible
-with Python 2.7 is 1.10, and the last release fully compatible with Python 3.5
-is 1.17.
+INDRA is tested on Python 3.8-3.14. Most usages of INDRA will work with
+other Python versions, however, full compatibility is currently only tested
+for these.
 
 The preferred way to install INDRA is by pointing pip to the source repository
 as
 
-    $ pip install git+https://github.com/sorgerlab/indra.git
+    $ pip install git+https://github.com/gyorilab/indra.git
 
 Releases of INDRA are also available on
 [PyPI](https://pip.pypa.io/en/latest/installing/), you can install the latest
@@ -294,8 +301,8 @@ You can run the INDRA REST API using the container as
 docker run -id -p 8080:8080 --entrypoint python labsyspharm/indra /sw/indra/rest_api/api.py
 ```
 
-The Dockerfile to build the image locally is available in a separate repository
-at https://github.com/indralab/indra_docker.
+The Dockerfile to build the image locally is available in the docker folder in this
+repository.
 
 ## Using INDRA
 
@@ -398,3 +405,4 @@ The development of INDRA has been funded from the following sources:
 | DARPA Automating Scientific Knowledge Extraction | HR00111990009        |
 | DARPA Panacea                                    | HR00111920022        |
 | DARPA Young Faculty Award                        | W911NF-20-1-0255     |
+| DARPA ASKEM / ARPA-H BDF                         | HR00112220036        |

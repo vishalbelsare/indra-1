@@ -1,5 +1,3 @@
-from __future__ import absolute_import, print_function, unicode_literals
-from builtins import dict, str
 import json
 from networkx import MultiDiGraph, Graph, cycle_basis
 from pygraphviz import AGraph
@@ -109,13 +107,16 @@ def cm_json_to_networkx(cm_json):
     return graph
 
 
-def get_cm_cycles(cm_graph):
+def get_cm_cycles(cm_graph, root_node=None):
     """Return cycles from a model's Kappa contact map graph representation.
 
     Parameters
     ----------
     cm_graph : networkx.Graph
         A networkx graph produced by cm_json_to_networkx.
+    root_node : Optional[str]
+        The root node of the graph. If None, the root node will be determined
+        by networkx.cycle_basis.
 
     Returns
     -------
@@ -123,7 +124,7 @@ def get_cm_cycles(cm_graph):
         A list of base cycles found in the contact map graph. Each cycle
         is represented as a list of strings of the form Monomer(site).
     """
-    cycles = cycle_basis(cm_graph)
+    cycles = cycle_basis(cm_graph, root_node)
     processed_cycles = []
     for cycle in cycles:
         processed_cycle = []

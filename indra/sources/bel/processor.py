@@ -240,7 +240,10 @@ class PybelProcessor(object):
             self.unhandled.append((u_data, v_data, k, edge_data))
             return
         for mod in mods:
-            modclass = modtype_to_modclass[mod.mod_type]
+            mod_type = mod.mod_type
+            if edge_data[pc.RELATION] in pc.CAUSAL_DECREASE_RELATIONS:
+                mod_type = modtype_to_inverse.get(mod_type)
+            modclass = modtype_to_modclass[mod_type]
             ev = self._get_evidence(u_data, v_data, k, edge_data)
             stmt = modclass(subj_agent, obj_agent, mod.residue, mod.position,
                             evidence=[ev])
@@ -527,7 +530,7 @@ def get_db_refs_by_name(ns, name, node_data):
         db_refs = {'GO': go_id}
         name = go_client.get_go_label(go_id)
     elif ns in ('MESHPP', 'MESHD', 'MESH'):
-        mesh_id, mesh_name = mesh_client.get_mesh_id_name(name)
+        mesh_id, mesh_name = mesh_client.get_mesh_id_name(name, offline=True)
         if not mesh_id:
             logger.info('Could not find MESH ID from %s' % name)
             return name, None
@@ -546,23 +549,17 @@ def get_db_refs_by_name(ns, name, node_data):
         if up_id:
             db_refs = {'UP': up_id}
     # Map Selventa families and complexes to FamPlex
-    elif ns == 'SFAM':
-        sfam_id, xrefs = selventa_lookup[('SFAM', name)]
-        db_refs = {'SFAM': sfam_id}
-        indra_name = bel_to_indra.get(name)
+    elif ns in {'SFAM', 'SCOMP'}:
+        try:
+            selventa_id, xrefs = selventa_lookup[(ns, name)]
+            db_refs = {ns: selventa_id}
+            indra_name = bel_to_indra.get(name)
+        except KeyError:
+            indra_name = None
+            db_refs = None
         if indra_name is None:
-            logger.info('Could not find mapping for BEL/SFAM family: '
-                        '%s (%s)' % (name, node_data))
-        else:
-            db_refs['FPLX'] = indra_name
-            name = indra_name
-    elif ns == 'SCOMP':
-        scomp_id, xrefs = selventa_lookup[('SCOMP', name)]
-        db_refs = {'SCOMP': scomp_id}
-        indra_name = bel_to_indra.get(name)
-        if indra_name is None:
-            logger.info('Could not find mapping for BEL/SCOMP complex: '
-                        '%s (%s)' % (name, node_data))
+            logger.info('Could not find mapping for BEL/%s family: '
+                        '%s (%s)' % (ns, name, node_data))
         else:
             db_refs['FPLX'] = indra_name
             name = indra_name
@@ -614,9 +611,15 @@ def get_db_refs_by_name(ns, name, node_data):
         name = chebi_client.get_chebi_name_from_id(chebi_id)
     # SDIS, SCHEM: Look up the ID and include it in the db_refs
     elif ns in {'SDIS', 'SCHEM'}:
-        sid, xrefs = selventa_lookup[(ns, name)]
-        db_refs = xrefs.copy()
-        db_refs[ns] = sid
+        try:
+            sid, xrefs = selventa_lookup[(ns, name)]
+            db_refs = xrefs.copy()
+            db_refs[ns] = sid
+        except KeyError:
+            logger.info(
+                f"Could not map Selventa name {name} to ID for {ns}."
+            )
+            return name, None
     elif ns == 'TEXT':
         db_refs = {ns: name}
     elif ns == 'TAX':

@@ -73,7 +73,7 @@ def process_pmc(pmc_id, offline=False, url=None,
     """
     # Loading content from PMC first
     logger.info('Loading %s from PMC' % pmc_id)
-    xml_str = pmc_client.get_xml(pmc_id)
+    xml_str = pmc_client.get_xml_s3(pmc_id)
     if xml_str is None:
         return None
     # Write into a file in the working folder
@@ -363,6 +363,47 @@ def process_json_file(file_name, citation=None, organism_priority=None):
         logger.error('Could not read file %s.' % file_name)
 
 
+def process_fries_json_group(group_prefix, citation=None,
+                             organism_priority=None):
+    """Return a ReachProcessor by processing a REACH fries output file group.
+
+    When running REACH through its CLI, for each input file, it produces
+    three output JSON files when using the fries output format. These three
+    files jointly constitute the output, so they have to be combined to be
+    processed. For instance, one might have PMC9582577.uaz.entities.json,
+    PMC9582577.uaz.events.json, PMC9582577.uaz.sentence.json.
+
+    Parameters
+    ----------
+    group_prefix : str
+        The prefix for the group of output files, e.g., PMC9582577.uaz
+    citation : Optional[str]
+        A PubMed ID passed to be used in the evidence for the extracted INDRA
+        Statements. Default: None
+    organism_priority : Optional[list of str]
+        A list of Taxonomy IDs providing prioritization among organisms
+        when choosing protein grounding. If not given, the default behavior
+        takes the first match produced by Reach, which is prioritized to be
+        a human protein if such a match exists.
+
+    Returns
+    -------
+    rp : ReachProcessor
+        A ReachProcessor containing the extracted INDRA Statements
+        in rp.statements.
+    """
+    file_types = ['entities', 'events', 'sentences']
+    combined_json = {}
+    for file_type in file_types:
+        fname = '%s.%s.json' % (group_prefix, file_type)
+        with open(fname, 'r') as fh:
+            combined_json[file_type] = json.load(fh)
+    # Note that we serialize back to a JSON string here to make use of the
+    # replacements done in process_json_str below
+    return process_json_str(json.dumps(combined_json), citation=citation,
+                            organism_priority=organism_priority)
+
+
 def process_json_str(json_str, citation=None, organism_priority=None):
     """Return a ReachProcessor by processing the given REACH json string.
 
@@ -388,6 +429,53 @@ def process_json_str(json_str, citation=None, organism_priority=None):
         A ReachProcessor containing the extracted INDRA Statements
         in rp.statements.
     """
+    json_dict = _preprocess_json_str(json_str)
+    if json_dict is None:
+        return None
+    rp = ReachProcessor(json_dict, pmid=citation,
+                        organism_priority=organism_priority)
+    rp.get_modifications()
+    rp.get_complexes()
+    rp.get_activation()
+    rp.get_translocation()
+    rp.get_regulate_amounts()
+    rp.get_conversion()
+    return rp
+
+
+def process_agents_from_entities(file_name, organism_priority=None, with_coordinates=False):
+    """Return INDRA Agents extracted from all entites, eve ones not appearing
+    in Statements.
+
+    Parameters
+    ----------
+    file_name : str
+        The name of the json file to be processed.
+    organism_priority : Optional[list of str]
+        A list of Taxonomy IDs providing prioritization among organisms
+        when choosing protein grounding. If not given, the default behavior
+        takes the first match produced by Reach, which is prioritized to be
+        a human protein if such a match exists.
+    with_coordinates : Optional[bool]
+        If True, the Agents will be returned in a tuple with their
+        coordinates. Default: False
+
+    Returns
+    -------
+    list[Agent] :
+        A list of INDRA Agents processed from all extracted entities.
+    """
+    with open(file_name, 'rb') as fh:
+        json_str = fh.read().decode('utf-8')
+    json_dict = _preprocess_json_str(json_str)
+    rp = ReachProcessor(json_dict, organism_priority=organism_priority)
+    if with_coordinates:
+        return rp.get_agents_from_entities_with_coords()
+    else:
+        return rp.get_agents_from_entities()
+
+
+def _preprocess_json_str(json_str):
     fields = ['frame-id', 'argument-label', 'object-meta',
               'doc-id', 'is-hypothesis', 'is-negated',
               'is-direct', 'found-by']
@@ -399,15 +487,7 @@ def process_json_str(json_str, citation=None, organism_priority=None):
         logger.error('Could not decode JSON string.')
         logger.exception(e)
         return None
-    rp = ReachProcessor(json_dict, pmid=citation,
-                        organism_priority=organism_priority)
-    rp.get_modifications()
-    rp.get_complexes()
-    rp.get_activation()
-    rp.get_translocation()
-    rp.get_regulate_amounts()
-    rp.get_conversion()
-    return rp
+    return json_dict
 
 
 def _read_content_offline(content, content_type='text'):

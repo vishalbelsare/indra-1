@@ -85,6 +85,32 @@ class ReachProcessor(object):
             except KeyError:
                 self.all_events[event_type] = [frame_id]
 
+    def get_all_entities(self):
+        """Return all entities extracted, even ones not part of events."""
+        return self.tree.execute("$.entities.frames")
+
+    def get_agents_from_entities(self):
+        """Return INDRA Agents extracted from all entities, even ones not
+        part of events."""
+        entities = self.get_all_entities()
+        agents = [
+            self._get_agent_from_entity(e['frame_id'])[0]
+            for e in entities
+        ]
+        agents = [a for a in agents if a is not None]
+        return agents
+
+    def get_agents_from_entities_with_coords(self, sentence_coords=False):
+        """Return INDRA Agents extracted from all entities, along with
+        global document-level coordinates, even ones not part of events."""
+        entities = self.get_all_entities()
+        agents_coords = [
+            self._get_agent_from_entity(e['frame_id'], sentence_coords=sentence_coords)
+            for e in entities
+        ]
+        agents_coords = [a for a in agents_coords if a[0] is not None]
+        return agents_coords
+
     def print_regulations(self):
         qstr = "$.events.frames[(@.type is 'regulation')]"
         res = self.tree.execute(qstr)
@@ -421,7 +447,17 @@ class ReachProcessor(object):
                 return loc
         return None
 
-    def _get_agent_from_entity(self, entity_id):
+    def _get_agent_from_entity(self, entity_id, sentence_coords=True):
+        """Return an INDRA Agent from a Reach entity ID.
+
+        Parameters
+        ----------
+        entity_id : str
+            The ID of the Reach entity.
+        sentence_coords : Optional[bool]
+            If True, the sentence coordinates of the entity are returned
+            rather than the global coordinates. Default: True
+        """
         qstr = "$.entities.frames[(@.frame_id is \'%s\')]" % entity_id
         res = self.tree.execute(qstr)
         if res is None:
@@ -434,6 +470,8 @@ class ReachProcessor(object):
 
         # This is the default name, which can be overwritten
         # below for specific database entries
+        if 'text' not in entity_term:
+            return None, None
         agent_name = entity_term['text']
         db_refs = self._get_db_refs(entity_term, self.organism_priority)
 
@@ -441,7 +479,7 @@ class ReachProcessor(object):
         mods, muts = self._get_mods_and_muts_from_mod_terms(mod_terms)
 
         # get sentence coordinates of the entity
-        coords = self._get_entity_coordinates(entity_term)
+        coords = self._get_entity_coordinates(entity_term, sentence_coords=sentence_coords)
 
         agent = Agent(agent_name, db_refs=db_refs, mods=mods, mutations=muts)
         standardize_agent_name(agent, standardize_refs=True)
@@ -493,6 +531,20 @@ class ReachProcessor(object):
                 db_refs['FPLX'] = xr['id']
             elif ns == 'proonto':
                 db_refs['PR'] = xr['id']
+            elif ns == 'taxonomy':
+                db_refs['TAXONOMY'] = xr['id']
+            elif ns == 'cl':
+                db_refs['CL'] = xr['id']
+            elif ns == 'tissuelist':
+                db_refs['CALOHA'] = xr['id']
+            elif ns == 'uberon':
+                db_refs['UBERON'] = xr['id']
+            elif ns == 'cellosaurus':
+                db_refs['CVCL'] = xr['id']
+            elif ns in ['uo', 'ncit', 'edam.topic', 'ncbitaxon', 'vo', 'bto',
+                        'efo', 'swo', 'iobc', 'ohpi', 'obi', 'ino',
+                        'ido', 'pr']:
+                db_refs[ns.upper()] = xr['id']
             # These name spaces are ignored
             elif ns in ['uaz']:
                 pass
@@ -579,13 +631,39 @@ class ReachProcessor(object):
                                % mod_type_str)
         return mcs
 
-    def _get_entity_coordinates(self, entity_term):
+    def _get_entity_coordinates(self, entity_term, sentence_coords=True):
         """Return sentence coordinates for a given entity.
 
         Given an entity term return the associated sentence coordinates as
         a tuple of the form (int, int). Returns None if for any reason the
         sentence coordinates cannot be found.
+
+        Parameters
+        ----------
+        entity_term : dict
+            A dictionary representing an entity term.
+        sentence_coords : Optional[bool]
+            If True, return the sentence coordinates of the entity. If False,
+            the global coordinates are returned. Default: True
         """
+        # Get the entity coordinate in the entire text and subtract the
+        # coordinate of the first character in the associated sentence to
+        # get the sentence coordinate of the entity. Return None if entity
+        # coordinates are missing
+        entity_start = entity_term.get('start-pos')
+        entity_stop = entity_term.get('end-pos')
+        if entity_start is None or entity_stop is None:
+            return None
+        entity_start = entity_start.get('offset')
+        entity_stop = entity_stop.get('offset')
+        if entity_start is None or entity_stop is None:
+            return None
+
+        # At this point we can return the global coordinates if we aren't
+        # interested in sentence-specific coordinates
+        if not sentence_coords:
+            return entity_start, entity_stop
+
         # The following lines get the starting coordinate of the sentence
         # containing the entity.
         sent_id = entity_term.get('sentence')
@@ -604,18 +682,6 @@ class ReachProcessor(object):
             return None
         sent_start = sent_start.get('offset')
         if sent_start is None:
-            return None
-        # Get the entity coordinate in the entire text and subtract the
-        # coordinate of the first character in the associated sentence to
-        # get the sentence coordinate of the entity. Return None if entity
-        # coordinates are missing
-        entity_start = entity_term.get('start-pos')
-        entity_stop = entity_term.get('end-pos')
-        if entity_start is None or entity_stop is None:
-            return None
-        entity_start = entity_start.get('offset')
-        entity_stop = entity_stop.get('offset')
-        if entity_start is None or entity_stop is None:
             return None
         return (entity_start - sent_start, entity_stop - sent_start)
 
@@ -699,50 +765,23 @@ class ReachProcessor(object):
         if 'is_direct' in event:
             direct = event['is_direct']
             epistemics['direct'] = direct
+
         # Get the section of the paper it comes from
-        section = self._get_section(event)
-        epistemics['section_type'] = section
-        return epistemics
-
-    _section_list = ['title', 'abstract', 'introduction', 'background',
-                     'results', 'methods', 'discussion', 'conclusion',
-                     'supplementary', 'figure']
-
-    def _get_section(self, event):
-        """Get the section of the paper that the event is from."""
         sentence_id = event.get('sentence')
-        section = None
+        sections = []
         if sentence_id:
             qstr = "$.sentences.frames[(@.frame_id is \'%s\')]" % sentence_id
             res = self.tree.execute(qstr)
             if res:
                 sentence_frame = list(res)[0]
-                passage_id = sentence_frame.get('passage')
-                if passage_id:
-                    qstr = "$.sentences.frames[(@.frame_id is \'%s\')]" % \
-                            passage_id
-                    res = self.tree.execute(qstr)
-                    if res:
-                        passage_frame = list(res)[0]
-                        section = passage_frame.get('section-id')
-        # If the section is in the standard list, return as is
-        if section in self._section_list:
-            return section
-        # Next, handle a few special cases that come up in practice
-        elif section.startswith('fig'):
-            return 'figure'
-        elif section.startswith('supm'):
-            return 'supplementary'
-        elif section == 'article-title':
-            return 'title'
-        elif section in ['subjects|methods', 'methods|subjects']:
-            return 'methods'
-        elif section == 'conclusions':
-            return 'conclusion'
-        elif section == 'intro':
-            return 'introduction'
-        else:
-            return None
+                sections = sentence_frame.get('sections', [])
+        epistemics['raw_sections'] = sections
+        for section in sections:
+            norm_section = normalize_section(section)
+            if norm_section:
+                epistemics['section_type'] = norm_section
+                break
+        return epistemics
 
     def _get_controller_agent(self, arg):
         """Return a single or a complex controller agent."""
@@ -824,6 +863,40 @@ class ReachProcessor(object):
                 sites[i] = Site(sites[0].residue, sites[i].position)
 
         return sites
+
+
+_section_list = ['title', 'abstract', 'introduction', 'background',
+                 'results', 'methods', 'discussion', 'conclusion',
+                 'supplementary', 'figure']
+
+
+def normalize_section(section):
+    # Strip off any spaces, new lines
+    section = section.strip()
+    # Next, we need to deal with a common pattern of section names like
+    # "3. results"
+    section = re.sub(r'^\d+[.]?[ ]?', '', section)
+    # Often, section title ends with a . like "discussion."
+    if section.endswith('.'):
+        section = section[:-1]
+    # If the section is in the standard list, return as is
+    if section in _section_list:
+        return section
+    # Next, handle a few special cases that come up in practice
+    elif section.startswith('fig'):
+        return 'figure'
+    elif section.startswith('supm'):
+        return 'supplementary'
+    elif section == 'article-title':
+        return 'title'
+    elif section in {'subjects|methods', 'methods|subjects', 'star*methods'}:
+        return 'methods'
+    elif section == 'conclusions':
+        return 'conclusion'
+    elif section == 'intro':
+        return 'introduction'
+    else:
+        return None
 
 
 def parse_amino_acid_string(s):

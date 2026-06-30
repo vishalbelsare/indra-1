@@ -28,6 +28,9 @@ UniProt client (:py:mod:`indra.databases.uniprot_client`)
 .. automodule:: indra.databases.uniprot_client
     :members:
 
+See also https://protmapper.readthedocs.io/en/latest/modules/uniprot.html
+whose functions this module imports and exposes.
+
 ChEBI client (:py:mod:`indra.databases.chebi_client`)
 -----------------------------------------------------
 
@@ -137,3 +140,17 @@ Biolookup client (:py:mod:`indra.databases.biolookup_client`)
 .. automodule:: indra.databases.biolookup_client
     :members:
 
+MONDO client (:py:mod:`indra.databases.mondo_client`)
+-----------------------------------------------------
+.. automodule:: indra.databases.mondo_client
+    :members:
+
+MGI client (:py:mod:`indra.databases.mgi_client`)
+-------------------------------------------------
+.. automodule:: indra.databases.mgi_client
+    :members:
+
+RGD client (:py:mod:`indra.databases.rgd_client`)
+-------------------------------------------------
+.. automodule:: indra.databases.rgd_client
+    :members:

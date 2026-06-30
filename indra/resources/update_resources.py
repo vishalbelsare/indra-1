@@ -292,14 +292,19 @@ def update_chebi_accessions():
     # Here we need to map to primary ChEBI IDs
     from indra.databases.chebi_client import get_primary_id
     # This is a wrapper just to strip off the CHEBI prefix to
-    # keep the existing convetions
+    # keep the existing conventions
     def _get_primary_id_wrapper(chebi_id):
         return get_primary_id(chebi_id)[6:]
     df_cas.COMPOUND_ID = df_cas.COMPOUND_ID.apply(_get_primary_id_wrapper)
+    df_cas.ACCESSION_NUMBER = df_cas.ACCESSION_NUMBER.replace('0103-05-09',
+                                                              '103-05-9')
     df_cas.drop_duplicates(subset=['ACCESSION_NUMBER', 'COMPOUND_ID'],
                            inplace=True)
     # Temporary fix, see https://github.com/ebi-chebi/ChEBI/issues/4149
     df_cas = df_cas[~df_cas['ACCESSION_NUMBER'].str.contains('/')]
+    # This is to avoid some weird entries like
+    # NMRShiftDB:60057454;PubChem:21593947...
+    df_cas = df_cas[~df_cas['ACCESSION_NUMBER'].str.contains(':')]
     df_cas.to_csv(fname, sep='\t',
                   columns=['ACCESSION_NUMBER', 'COMPOUND_ID'],
                   header=['CAS', 'CHEBI'], index=False)
@@ -488,13 +493,13 @@ def update_ncit_map():
         return df
 
     df_hgnc = get_ncit_df(url_hgnc)
-    df_hgnc.replace('HGNC:(\d*)\s*', '\\1', inplace=True, regex=True)
+    df_hgnc.replace(r'HGNC:(\d*)\s*', '\\1', inplace=True, regex=True)
     df_go = get_ncit_df(url_go)
     df_go.rename(columns={'Source Code': 'Target Code',
-                       'Target Code': 'Source Code',
-                       'Source Coding Scheme': 'Target Coding Scheme',
-                       'Target Coding Scheme': 'Source Coding Scheme'},
-              inplace=True)
+                          'Target Code': 'Source Code',
+                          'Source Coding Scheme': 'Target Coding Scheme',
+                          'Target Coding Scheme': 'Source Coding Scheme'},
+                 inplace=True)
     df_chebi = get_ncit_df(url_chebi)
     df_chebi.replace('ChEBI', 'CHEBI', inplace=True)
 
@@ -510,7 +515,7 @@ def update_ncit_map():
     ncit_swissprot_file = 'NCIt-SwissProt.txt'
     # These entries represent non-Uniprot (nuccode?) IDs and
     # we exclude them for validity
-    exclude_list = {'M74558', 'U37690', 'U65002'}
+    exclude_list = {'M74558', 'U37690', 'U65002', 'P0DTC1|P0DTD1'}
     save_from_http(url_swissprot, ncit_swissprot_file)
     df_uniprot = pandas.read_csv(ncit_swissprot_file, sep='\t',
                                  index_col=None)
@@ -601,15 +606,23 @@ def update_lincs_proteins():
         json.dump(prot_dict, fh, indent=1)
 
 
+MESH_YEAR = "2024"
+
+
 def update_mesh_names():
     """Update Mesh ID to name and tree number mappings."""
+    # The structure of the MeSH FTP site is a bit confusing -
+    # the addresses used in the update_mesh_names() functions
+    # only work for the current year's releases. If you want
+    # a previous release, you need to change the following URL to be:
+    # ftp://nlmpubs.nlm.nih.gov/online/mesh/<YEAR>/xmlmesh/desc<YEAR>.gz
     url = ('ftp://nlmpubs.nlm.nih.gov/online/mesh/MESH_FILES/'
-           'xmlmesh/desc2021.gz')
-    desc_path = os.path.join(path, 'mesh_desc2021.gz')
+           f'xmlmesh/desc{MESH_YEAR}.gz')
+    desc_path = os.path.join(path, f'mesh_desc{MESH_YEAR}.gz')
     if not os.path.exists(desc_path):
-        logging.info('Download MeSH descriptors from %s', url)
+        logging.info('Download %s MeSH descriptors from %s', MESH_YEAR, url)
         urlretrieve(url, desc_path)
-        logging.info('Done downloading MeSH descriptors')
+        logging.info('Done downloading %s MeSH descriptors', MESH_YEAR)
     # Process the XML and find descriptor records
     with gzip.open(desc_path) as desc_file:
         logging.info('Parsing MeSH descriptors')
@@ -618,25 +631,34 @@ def update_mesh_names():
     for record in et.iterfind('DescriptorRecord'):
         # We first get the ID and the name
         uid = record.find('DescriptorUI').text
+        txid_tags = record.findall('ConceptList/Concept/RelatedRegistry'
+                                   'NumberList/RelatedRegistryNumber')
+        txids = [txid.text[4:] for txid in txid_tags
+                 if txid.text.startswith('txid')]
+        if not txids:
+            txid_tags = record.findall('ConceptList/Concept/RegistryNumber')
+            txids += [txid.text[4:] for txid in txid_tags
+                      if txid.text.startswith('txid')]
+        txids_str = '|'.join(txids)
         name = record.find('DescriptorName/String').text
         term_name_str = _get_term_name_str(record, name)
         tree_numbers = record.findall('TreeNumberList/TreeNumber')
         tree_numbers_str = '|'.join([t.text for t in tree_numbers])
-        rows.append((uid, name, term_name_str, tree_numbers_str))
+        rows.append((uid, name, term_name_str, tree_numbers_str, txids_str))
 
     fname = os.path.join(path, 'mesh_id_label_mappings.tsv')
-    write_unicode_csv(fname, rows, delimiter='\t')
+    write_unicode_csv(fname, sorted(rows), delimiter='\t')
 
 
 def update_mesh_supplementary_names():
     """Update MeSH ID to name mappings for supplementary terms."""
     supp_url = ('ftp://nlmpubs.nlm.nih.gov/online/mesh/MESH_FILES/'
-                'xmlmesh/supp2021.gz')
-    supp_path = os.path.join(path, 'mesh_supp2021.gz')
+                f'xmlmesh/supp{MESH_YEAR}.gz')
+    supp_path = os.path.join(path, f'mesh_supp{MESH_YEAR}.gz')
     if not os.path.exists(supp_path):
-        logging.info('Download MeSH supplement from %s', supp_url)
+        logging.info('Download %s MeSH supplement from %s', MESH_YEAR, supp_url)
         urlretrieve(supp_url, supp_path)
-        logging.info('Done downloading MeSH supplement')
+        logging.info('Done downloading %s MeSH supplement', MESH_YEAR)
     with gzip.open(supp_path) as supp_file:
         logging.info('Parsing MeSH supplement')
         supp_et = ET.parse(supp_file)
@@ -659,9 +681,9 @@ def update_mesh_supplementary_names():
         supp_rows.append((uid, name, term_name_str, mapped_to))
 
     fname = os.path.join(path, 'mesh_supp_id_label_mappings.tsv')
-    write_unicode_csv(fname, supp_rows, delimiter='\t')
+    write_unicode_csv(fname, sorted(supp_rows), delimiter='\t')
     fname = os.path.join(path, 'mesh_cas_mappings.tsv')
-    write_unicode_csv(fname, reg_number_mappings, delimiter='\t')
+    write_unicode_csv(fname, sorted(reg_number_mappings), delimiter='\t')
 
 
 def _get_term_name_str(record, name):
@@ -675,6 +697,7 @@ def _get_term_name_str(record, name):
             terms = concept.findall('TermList/Term')
             for term in terms:
                 term_name = term.find('String').text
+                term_name = term_name.strip()
                 if term_name != name:
                     all_term_names.append(term_name)
     # Append a list of term names separated by pipes to the table
@@ -971,6 +994,49 @@ def update_ec_code():
     PyOboClient.update_by_prefix("ec-code", indra_prefix='eccode')
 
 
+def update_rgd():
+    url = "https://download.rgd.mcw.edu/data_release/GENES_RAT.txt"
+    df = pandas.read_csv(url, sep='\t', comment='#', dtype=str)
+    df = df[['GENE_RGD_ID', 'SYMBOL', 'OLD_SYMBOL', 'ENSEMBL_ID']]
+    df.rename(columns={'GENE_RGD_ID': 'ID',
+                       'SYMBOL': 'symbol',
+                       'OLD_SYMBOL': 'synonyms',
+                       'ENSEMBL_ID': 'ensembl'},
+              inplace=True)
+    df['ID'] = df['ID'].astype(str)
+    fname = os.path.join(path, 'rgd_entries.tsv')
+    df.to_csv(fname, index=None, sep='\t')
+
+
+def update_mgi():
+    # This provides basic ID and naming resources
+    url = "http://www.informatics.jax.org/downloads/reports/MRK_List2.rpt"
+    df = pandas.read_csv(url, sep='\t')
+    # MGI contains entries for various non-gene regions like enhancers
+    df = df[df['Feature Type'].str.contains('gene')]
+    df = df[['MGI Accession ID', 'Marker Symbol',
+             'Marker Synonyms (pipe-separated)']]
+    df['MGI Accession ID'] = df['MGI Accession ID'].str.replace('MGI:', '')
+    df.rename(columns={'MGI Accession ID': 'ID',
+                       'Marker Symbol': 'symbol',
+                       'Marker Synonyms (pipe-separated)': 'synonyms'},
+              inplace=True)
+    df['ID'] = df['ID'].astype(str)
+
+    # This provides ENSEMBL mappings
+    url = "http://www.informatics.jax.org/downloads/reports/MRK_ENSEMBL.rpt"
+    df2 = pandas.read_csv(url, sep='\t', header=None)
+    mgi_col = 0
+    ensembl_col = 5
+    df2 = df2[[mgi_col, ensembl_col]]
+    df2.columns = ['ID', 'ensembl']
+    df2['ID'] = df2['ID'].str.replace('MGI:', '')
+    df2['ID'] = df2['ID'].astype(str)
+    df_merged = pandas.merge(df, df2, on='ID', how='left')
+
+    fname = os.path.join(path, 'mgi_entries.tsv')
+    df_merged.to_csv(fname, index=None, sep='\t')
+
 def main():
     update_famplex()
     update_famplex_map()
@@ -1001,6 +1067,7 @@ def main():
     update_lspci()
     update_pubchem_mesh_map()
     update_ec_code()
+    update_mgi()
 
 
 if __name__ == '__main__':

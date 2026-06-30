@@ -1,11 +1,9 @@
-from __future__ import absolute_import, print_function, unicode_literals
-from builtins import dict, str
 from os.path import dirname, abspath, join
 from indra.benchmarks import bioprocesses as bp
 # from indra.benchmarks import complexes as cp
 from indra.benchmarks import phosphorylations as phos
 from indra.util import unicode_strs
-from nose.plugins.attrib import attr
+import pytest
 import unittest
 
 eval_file = join(dirname(abspath(__file__)),
@@ -22,7 +20,8 @@ eval_file = join(dirname(abspath(__file__)),
 #    assert gene_set
 #    assert unicode_strs(gene_set)
 
-@attr('nonpublic', 'webservice')
+@pytest.mark.nonpublic
+@pytest.mark.webservice
 @unittest.skip('Complex analysis has been removed, test should be too, later.')
 def test_complexes():
     """Smoke test to see if complexes analysis works."""

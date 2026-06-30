@@ -1,7 +1,4 @@
-from __future__ import absolute_import, print_function, unicode_literals
-from builtins import dict, str
 from indra.databases import ndex_client
-from nose.plugins.attrib import attr
 
 
 def test_ndex_ver():

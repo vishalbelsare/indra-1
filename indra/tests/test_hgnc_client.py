@@ -1,8 +1,6 @@
-from __future__ import absolute_import, print_function, unicode_literals
-from builtins import dict, str
 from indra.databases import hgnc_client
 from indra.util import unicode_strs
-from nose.plugins.attrib import attr
+import pytest
 
 
 def test_get_uniprot_id():
@@ -26,7 +24,7 @@ def test_get_hgnc_name():
     assert unicode_strs(hgnc_name)
 
 
-@attr('webservice')
+@pytest.mark.webservice
 def test_get_hgnc_name_nonexistent():
     hgnc_id = '123456'
     hgnc_name = hgnc_client.get_hgnc_name(hgnc_id)
@@ -101,3 +99,8 @@ def test_ec_code():
     assert "41022" not in hgnc_client.get_hgncs_from_enzyme('2.4.1.228')
     assert "2.4.1.228" in hgnc_client.get_enzymes('18149')
     assert "18149" in hgnc_client.get_hgncs_from_enzyme("2.4.1.228")
+
+
+def test_mgi_name_conversion():
+    assert hgnc_client.get_hgnc_id_from_mgi_name('Braf') == '1097'
+    assert hgnc_client.get_hgnc_name_from_mgi_name('Braf') == 'BRAF'

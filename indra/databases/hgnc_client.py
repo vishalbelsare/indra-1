@@ -189,7 +189,7 @@ def get_hgnc_from_mouse(mgi_id):
     hgnc_id : str
         The HGNC ID corresponding to the given MGI ID.
     """
-    if mgi_id.startswith('MGI:'):
+    if mgi_id and mgi_id.startswith('MGI:'):
         mgi_id = mgi_id[4:]
     return mouse_map.get(mgi_id)
 
@@ -207,7 +207,7 @@ def get_hgnc_from_rat(rgd_id):
     hgnc_id : str
         The HGNC ID corresponding to the given RGD ID.
     """
-    if rgd_id.startswith('RGD:'):
+    if rgd_id and rgd_id.startswith('RGD:'):
         rgd_id = rgd_id[4:]
     return rat_map.get(rgd_id)
 
@@ -218,7 +218,7 @@ def get_rat_id(hgnc_id):
     Parameters
     ----------
     hgnc_id : str
-        The HGNC ID to be converted. Example: ""
+        The HGNC ID to be converted. Example: "1097"
 
     Returns
     -------
@@ -236,7 +236,7 @@ def get_mouse_id(hgnc_id):
     Parameters
     ----------
     hgnc_id : str
-        The HGNC ID to be converted. Example: ""
+        The HGNC ID to be converted. Example: "1097"
 
     Returns
     -------
@@ -373,9 +373,59 @@ def get_hgncs_from_enzyme(ec_code: str) -> Set[str]:
     return enzyme_to_hgncs.get(ec_code, set())
 
 
+def get_hgnc_id_from_mgi_name(mgi_name: str) -> Union[str, None]:
+    """Return a HGNC ID for the human gene homologous to the given mouse gene.
+
+    The mouse gene name provided as input is assumed to be an MGI
+    official symbol.
+
+    Parameters
+    ----------
+    mgi_name :
+        The MGI symbol of a mouse gene.
+
+    Returns
+    -------
+    :
+        The HGNC ID of the corresponding human gene or None if not available.
+    """
+    from indra.databases import mgi_client
+    mgi_id = mgi_client.get_id_from_name(mgi_name)
+    if mgi_id:
+        return get_hgnc_from_mouse(mgi_id)
+    return None
+
+
+def get_hgnc_name_from_mgi_name(mgi_name: str) -> Union[str, None]:
+    """Return a HGNC name for the human gene homologous to the given mouse gene.
+
+    The mouse gene name provided as input is assumed to be an MGI
+    official symbol.
+
+    Parameters
+    ----------
+    mgi_name :
+        The MGI symbol of a mouse gene.
+
+    Returns
+    -------
+    :
+        The HGNC symbol of the corresponding human gene or None if not
+        available.
+    """
+    hgnc_id = get_hgnc_id_from_mgi_name(mgi_name)
+    if hgnc_id:
+        return get_hgnc_name(hgnc_id)
+    return None
+
+
 def _read_hgnc_maps():
     hgnc_file = get_resource_path("hgnc_entries.tsv")
     csv_rows = read_unicode_csv(hgnc_file, delimiter='\t', encoding='utf-8')
+    hgnc_uniprot_preferred = get_resource_path("hgnc_uniprot_preferred.csv")
+    csv_rows_uniprot_preferred = \
+        read_unicode_csv(hgnc_uniprot_preferred, delimiter=',',
+                         encoding='utf-8')
     hgnc_names = {}
     hgnc_ids = {}
     hgnc_withdrawn = []
@@ -469,11 +519,18 @@ def _read_hgnc_maps():
     for old_id, new_id in hgnc_withdrawn_new_ids.items():
         hgnc_names[old_id] = hgnc_names[new_id]
 
+    uniprot_ids_preferred = {}
+    for row in csv_rows_uniprot_preferred:
+        hgnc_id = row[0]
+        uniprot_id = row[1]
+        uniprot_ids_preferred[hgnc_id] = uniprot_id
+
     return (
         hgnc_names, hgnc_ids, hgnc_withdrawn,
         uniprot_ids, entrez_ids, entrez_ids_reverse, mouse_map, rat_map,
         prev_sym_map, ensembl_ids, ensembl_ids_reverse, gene_types,
         dict(hgnc_to_enzymes), dict(enzyme_to_hgncs),
+        uniprot_ids_preferred
     )
 
 
@@ -481,7 +538,7 @@ def _read_hgnc_maps():
     hgnc_names, hgnc_ids, hgnc_withdrawn, uniprot_ids, entrez_ids,
     entrez_ids_reverse, mouse_map, rat_map, prev_sym_map, ensembl_ids,
     ensembl_ids_reverse, gene_type,
-    hgnc_to_enzymes, enzyme_to_hgncs,
+    hgnc_to_enzymes, enzyme_to_hgncs, uniprot_ids_preferred
 ) = _read_hgnc_maps()
 
 

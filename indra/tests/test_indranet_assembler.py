@@ -3,7 +3,7 @@ import pandas as pd
 import networkx as nx
 from indra.statements import *
 from indra.assemblers.indranet.net import default_sign_dict
-from indra.assemblers.indranet import IndraNetAssembler, IndraNet
+from indra.assemblers.indranet import IndraNetAssembler, IndraNet, statement_to_rows
 
 
 ev1 = Evidence(pmid='1')
@@ -175,10 +175,10 @@ def test_to_digraph():
             'Activation', 'Phosphorylation', 'Inhibition', 'IncreaseAmount'}
     assert all(digraph.edges[e].get('belief', False) for e in digraph.edges)
     assert all(isinstance(digraph.edges[e]['belief'],
-                          (float, np.longfloat)) for e in digraph.edges)
+                          (float, np.longdouble)) for e in digraph.edges)
     assert all(digraph.edges[e].get('weight', False) for e in digraph.edges)
     assert all(isinstance(digraph.edges[e]['weight'],
-                          (float, np.longfloat)) for e in digraph.edges)
+                          (float, np.longdouble)) for e in digraph.edges)
     digraph_from_df = IndraNet.digraph_from_df(df)
     assert nx.is_isomorphic(digraph, digraph_from_df)
 
@@ -206,11 +206,11 @@ def test_to_signed_graph():
     assert all(signed_graph.edges[e].get('belief', False) for e in
                signed_graph.edges)
     assert all(isinstance(signed_graph.edges[e]['belief'],
-                          (float, np.longfloat)) for e in signed_graph.edges)
+                          (float, np.longdouble)) for e in signed_graph.edges)
     assert all(signed_graph.edges[e].get('weight', False) for e in
                signed_graph.edges)
     assert all(isinstance(signed_graph.edges[e]['weight'],
-                          (float, np.longfloat)) for e in signed_graph.edges)
+                          (float, np.longdouble)) for e in signed_graph.edges)
 
 
 def _weight_mapping(G):
@@ -328,3 +328,18 @@ def test_self_loops():
     assert ('a', 'a') not in ug4.edges
     assert ('c', 'c') not in ug4.edges
     assert ('b', 'b') not in ug4.edges
+
+
+def test_stmt_to_rows():
+    ia = IndraNetAssembler([st1, st2, st3, st4, st5, st6, st9])
+
+    rows = statement_to_rows(st1)
+    assert len(rows) == 1
+    assert rows[0] == ['a', 'b', 'HGNC', '1', 'TEXT', 'b', None, None,
+                       'Activation', 1, 8197018847132618, 1, {None: 1}, None]
+
+    source_count = {-25125767941752990: {'db1': 1}}
+    rows = statement_to_rows(st2, source_counts=source_count)
+    assert rows[0] == ['a', 'c', 'HGNC', '1', 'TEXT', 'c', None, None,
+                       'Inhibition', 1, -25125767941752990, 0.76, {'db1': 1}, None]
+

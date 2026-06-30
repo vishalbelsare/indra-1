@@ -328,5 +328,25 @@
             "color": "white",
             "background-color": "#bf98eb"
         }
+    },
+    "wormbase": {
+        "name": "WormBase",
+        "link": "http://wormbase.org/",
+        "type": "database",
+        "domain": "biology",
+        "default_style": {
+            "color": "white",
+            "background-color": "#a8d7ff"
+        }
+    },
+    "tkg": {
+        "name": "textToKnowledgeGraph",
+        "link": "https://github.com/ndexbio/llm-text-to-knowledge-graph",
+        "type": "reader",
+        "domain": "biology",
+        "default_style": {
+            "color": "white",
+            "background-color": "#ffb3ba"
+        }
     }
 }

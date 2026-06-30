@@ -12,6 +12,13 @@ from indra.statements.validate import assert_valid_db_refs
 logger = logging.getLogger(__name__)
 
 
+EDGES_BLACKLIST = [
+    # Skips a relation in the 2024 MeSH hierarchy containing
+    # MESH:D015835 -[isa]-> MESH:D013285 -[isa]-> MESH:D015835
+    ('MESH:D015835', 'MESH:D013285', 'isa')
+]
+
+
 class BioOntology(IndraOntology):
     """Represents the ontology used for biology applications."""
     # The version is used to determine if the cached pickle is still valid
@@ -19,13 +26,13 @@ class BioOntology(IndraOntology):
     # should be incremented to "force" rebuilding the ontology to be consistent
     # with the underlying resource files.
     name = 'bio'
-    version = '1.26'
+    version = '1.34'
     ontology_namespaces = [
         'go', 'efo', 'hp', 'doid', 'chebi', 'ido', 'mondo', 'eccode',
     ]
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def initialize(self, rebuild=False):
         if rebuild or not os.path.exists(CACHE_FILE):
@@ -90,6 +97,9 @@ class BioOntology(IndraOntology):
         logger.info('Adding replacements...')
         self.add_uniprot_replacements()
         self.add_obo_replacements()
+        # Remove blacklisted edges
+        logger.info('Removing blacklisted edges...')
+        self.remove_edges(EDGES_BLACKLIST)
 
         # The graph is now initialized
         self._initialized = True
@@ -137,11 +147,15 @@ class BioOntology(IndraOntology):
         from indra.databases import hgnc_client
         from indra.databases import uniprot_client
         edges = []
-        for hid, uid in hgnc_client.uniprot_ids.items():
-            uids = uid.split(', ')
+        for hid, upid in hgnc_client.uniprot_ids.items():
+            uids = upid.split(', ')
+            preferred = hgnc_client.uniprot_ids_preferred.get(hid)
+            if preferred:
+                uids = [preferred]
             for uid in uids:
+                edge_data = {'type': 'xref', 'source': 'hgnc'}
                 edges.append((self.label('HGNC', hid), self.label('UP', uid),
-                              {'type': 'xref', 'source': 'hgnc'}))
+                              edge_data))
         self.add_edges_from(edges)
 
         edges = [(self.label('UP', uid), self.label('HGNC', hid),
@@ -278,10 +292,34 @@ class BioOntology(IndraOntology):
         reverse_rel = {
             'has_part',
         }
+
+        exceptions = {
+            # Some (non-physical entity) GO terms have a has_part relationship
+            # that creates cycles in the isa/partof subgraph. One example is
+            # signaling receptor binding (GO:GO:0005102)-[partof]-
+            #      pheromone activity (GO:GO:0005186)
+            # where the first is actually a more generic term compared to the
+            # second. The semantics of these are different from typical partof
+            # relations in INDRA so we exclude them.
+            'GO': ('has_part', lambda x: x['type'] != 'cellular_component'),
+            # Similarly, CHEBI partof/isa relations have cycles, for example,
+            # molybdate (CHEBI:CHEBI:36264)-[partof]-
+            #     sodium molybdate (anhydrous) (CHEBI:CHEBI:75215)
+            # sodium molybdate (anhydrous) (CHEBI:CHEBI:75215)-[partof]-
+            #     sodium molybdate tetrahydrate (CHEBI:CHEBI:132099)
+            # sodium molybdate tetrahydrate (CHEBI:CHEBI:132099)-[isa]-
+            #     molybdate (CHEBI:CHEBI:36264)
+            # For simplicity, we exclude all has_part (i.e., reverse partof)
+            # relations coming from CHEBI.
+            'CHEBI': ('has_part', lambda x: True),
+        }
+
         for ns in self.ontology_namespaces:
             oc = obo_client.OntologyClient(prefix=ns)
+            ns_exceptions = exceptions.get(ns.upper())
             for db_id, entry in oc.entries.items():
                 for rel, targets in entry.get('relations', {}).items():
+
                     # Skip unknown relation types
                     mapped_rel = rel_mappings.get(rel)
                     if not mapped_rel:
@@ -290,6 +328,13 @@ class BioOntology(IndraOntology):
                         source_label = db_id
                     else:
                         source_label = self.label(ns.upper(), db_id)
+
+                    # Here we check if there is an exception condition defined
+                    # on the inclusion of these relations
+                    if ns_exceptions and rel == ns_exceptions[0]:
+                        if ns_exceptions[1](self.nodes[source_label]):
+                            continue
+
                     for target in targets:
                         if ':' in target and not target.startswith(ns.upper()):
                             target_label = target
@@ -589,8 +634,8 @@ class BioOntology(IndraOntology):
         super().add_nodes_from(nodes_for_adding, **attr)
 
     def add_edges_from(self, ebunch_to_add, **attr):
-        for source, target, _ in ebunch_to_add:
-            for label in [source, target]:
+        for edge_info in ebunch_to_add:
+            for label in edge_info[:2]:
                 self.assert_valid_node(label)
         super().add_edges_from(ebunch_to_add, **attr)
 
@@ -602,6 +647,21 @@ class BioOntology(IndraOntology):
             assert_valid_db_refs({db_ns: db_id})
         except Exception as e:
             logger.warning(e)
+
+    def remove_edges(self, edges_to_remove):
+        initial_edge_count = len(self.edges)
+        for source, target, e_type in edges_to_remove:
+            if (source, target) in self.edges:
+                # Check that the edge type matches
+                if self.edges[source, target]['type'] != e_type:
+                    continue
+
+                # Remove the edge
+                self.remove_edge(source, target)
+
+        final_edge_count = len(self.edges)
+        logger.info('Removed %d edges from the ontology' %
+                    (initial_edge_count - final_edge_count))
 
 
 def _get_uniprot_type(uc, uid):

@@ -10,10 +10,11 @@ from pybiopax import model_to_owl_file
 
 from indra.statements import *
 from indra.util import flatten
-from indra.statements.validate import print_validation_report
-from indra.ontology.standardize import get_standard_agent
+from indra.statements.validate import print_validation_report, \
+    assert_valid_db_refs, validate_id
+from indra.ontology.standardize import standardize_name_db_refs
 from indra.databases import hgnc_client, uniprot_client, chebi_client, \
-    parse_identifiers_url
+    parse_identifiers_url, bioregistry_client
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,16 @@ class BiopaxProcessor(object):
     ----------
     model : org.biopax.paxtools.model.Model
         A BioPAX model object (java object)
+    use_conversion_level_evidence : Optional[bool]
+        If True, the evidence for each Statement is taken from the
+        conversion that the Statement was extracted from. If False,
+        the evidence is taken from the individual control that the
+        Statement was extracted from. Setting this toi True
+        could have unintended consequences because e.g., a
+        Phosphorylation could be extracted from a Conversion
+        that has multiple controls, and the evidence for the
+        Phosphorylation would generally not be specific
+        to the kinase in the statement. Default is False.
 
     Attributes
     ----------
@@ -66,7 +77,6 @@ class BiopaxProcessor(object):
         self.get_gap_gef()
         self.eliminate_exact_duplicates()
         print_validation_report(self.statements)
-
 
     def save_model(self, file_name):
         """Save the BioPAX model object in an OWL file.
@@ -153,13 +163,25 @@ class BiopaxProcessor(object):
         return BiopaxProcessor.find_matching_entities(left_simple, right_simple)
 
     @staticmethod
-    def find_matching_entities(left_simple, right_simple):
-        """Find matching entities between two lists of simple entities."""
+    def find_matching_entities(left_entities, right_entities):
+        """Find matching entities between two lists of entities."""
         matches = []
-        for inp, outp in itertools.product(left_simple, right_simple):
+        for inp, outp in itertools.product(left_entities, right_entities):
+            # If these are the exact same object instances, then they are
+            # trivially matching. This covers 'complex' and 'complex_named'
+            # physical entity types as well.
+            if inp.uid == outp.uid:
+                matches.append((inp, outp))
+                continue
+            # Otherwise we need to check what types of entities we are dealing
+            # with and proceed depending on the type
             inp_type = infer_pe_type(inp)
             outp_type = infer_pe_type(outp)
             if inp_type != outp_type:
+                continue
+            # Here we don't go deeper - if the complex is not handled by the
+            # uid-based match above, we don't consider it a match.
+            elif inp_type in {'complex', 'complex_named'}:
                 continue
             elif inp_type == 'family':
                 input_ers = {mpe.entity_reference.uid
@@ -176,9 +198,6 @@ class BiopaxProcessor(object):
             elif not isinstance(inp, (bp.SimplePhysicalEntity, bp.Complex)) or \
                     not isinstance(outp, (bp.SimplePhysicalEntity, bp.Complex)):
                 continue
-            elif inp_type == 'complex_named':
-                if inp.uid == outp.uid:
-                    matches.append((inp, outp))
             elif inp_type == 'complex_family':
                 inp_members = flatten([expand_complex(m)
                                       for m in expand_family(inp)])
@@ -225,8 +244,8 @@ class BiopaxProcessor(object):
             ev = self._get_evidence(conversion)
             for inp, outp in self.find_matching_left_right(conversion):
                 for inp_simple, outp_simple in \
-                        zip(expand_family(inp),
-                            expand_family(outp)):
+                        self.find_matching_entities(expand_family(inp),
+                                                    expand_family(outp)):
                     gained_mods, lost_mods, activity_change = \
                         self.feature_delta(inp_simple, outp_simple)
                     inp_agents = \
@@ -245,8 +264,8 @@ class BiopaxProcessor(object):
                 # which we need to capture
                 _, _, overall_activity_change = self.feature_delta(inp, outp)
                 for inp_simple, outp_simple in \
-                        zip(expand_family(inp),
-                            expand_family(outp)):
+                        self.find_matching_entities(expand_family(inp),
+                                                    expand_family(outp)):
                     gained_mods, lost_mods, activity_change = \
                         self.feature_delta(inp_simple, outp_simple)
                     activity_change = activity_change if activity_change else \
@@ -263,6 +282,9 @@ class BiopaxProcessor(object):
                 activity_change, ev in self._conversion_state_iter():
             for mods, is_gain in ((gained_mods, True), (lost_mods, False)):
                 for mod in mods:
+                    # We skip generic / unspecified modifications
+                    if mod.mod_type == 'modification':
+                        continue
                     stmt_class = modtype_to_modclass[mod.mod_type]
                     if not is_gain:
                         stmt_class = modclass_to_inverse[stmt_class]
@@ -303,12 +325,12 @@ class BiopaxProcessor(object):
             assert isinstance(agent, Agent)
             if gained_mods:
                 ag = copy.deepcopy(agent)
-                ag.mods = gained_mods
+                ag.mods = list(gained_mods)
                 stmt = ActiveForm(ag, 'activity', is_active, evidence=ev)
                 self.statements.append(stmt)
             if lost_mods:
                 ag = copy.deepcopy(agent)
-                ag.mods = lost_mods
+                ag.mods = list(lost_mods)
                 stmt = ActiveForm(ag, 'activity', not is_active, evidence=ev)
                 self.statements.append(stmt)
 
@@ -466,24 +488,27 @@ class BiopaxProcessor(object):
         xrefs = BiopaxProcessor._get_processed_xrefs(bpe)
 
         # We now need to harmonize UP and HGNC
-        # Case 1. Multiple genes coding for one protein
         nhgnc_ids = len(xrefs.get('HGNC', {}))
         nup_ids = len(xrefs.get('UP', {}))
-        # One protein coded by many genes
-        if nhgnc_ids > 1 and nup_ids == 1:
+        # One protein coded by many genes, including the special case where
+        # there aren't any UniProt IDs given
+        if nhgnc_ids > 1 and nup_ids <= 1:
             for hgnc_id in xrefs['HGNC']:
                 agent = get_standard_agent(name, {'HGNC': hgnc_id}, mods=mcs)
                 agents.append(agent)
-        # One gene coding for many proteins
-        elif nhgnc_ids == 1 and nup_ids > 1:
+        # One gene coding for many proteins, including the case where
+        # a HGNC ID is missing and we only have UniProt IDs
+        elif nhgnc_ids <= 1 and nup_ids > 1:
             for up_id in xrefs['UP']:
                 agent = get_standard_agent(name, _refs_from_up_id(up_id),
                                            mods=mcs)
                 agents.append(agent)
         # This is secretly a family, i.e., we have more than one
         # gene/protein IDs and so we can go by one of the ID sets and
-        # standardize from there
-        elif nhgnc_ids > 1 and nhgnc_ids == nup_ids:
+        # standardize from there. Usually the number of HGNC and UniProt IDs
+        # are the same but there are exceptions where there are e.g., 3
+        # UniProt IDs but only 2 of them have corresponding HGNC IDs.
+        elif nhgnc_ids > 1 and nup_ids > 1:
             for up_id in xrefs['UP']:
                 agent = get_standard_agent(name, _refs_from_up_id(up_id),
                                            mods=mcs)
@@ -649,7 +674,14 @@ class BiopaxProcessor(object):
         # This is a simple check to see if we should treat this as a URL
         if not entref.uid.startswith('http'):
             return None, None
-        primary_ns, primary_id = parse_identifiers_url(entref.uid)
+        url = entref.uid
+        if 'bioregistry' in url:
+            primary_ns, primary_id = \
+                bioregistry_client.get_ns_id_from_bioregistry_curie(
+                    url.split("/")[-1]
+                )
+        else:
+            primary_ns, primary_id = parse_identifiers_url(url)
         return primary_ns, primary_id
 
     @staticmethod
@@ -805,7 +837,7 @@ def _is_entity(bpe):
 
 
 def _listify(lst):
-    if not isinstance(lst, collections.Iterable):
+    if not isinstance(lst, list):
         return [lst]
     else:
         return lst
@@ -984,6 +1016,19 @@ def _refs_from_up_id(up_id):
     else:
         db_refs = {'UP': up_id}
     return db_refs
+
+
+def get_standard_agent(name, db_refs, **kwargs):
+    standard_name, db_refs = standardize_name_db_refs(db_refs)
+    # We remove any invalid entries here, e.g.,
+    # "---" which comes up in Pathway Commons
+    for k, v in copy.copy(db_refs).items():
+        if not validate_id(k, v):
+            db_refs.pop(k)
+    if standard_name:
+        name = standard_name
+    assert_valid_db_refs(db_refs)
+    return Agent(name, db_refs=db_refs, **kwargs)
 
 
 def clean_up_xrefs(xrefs):
